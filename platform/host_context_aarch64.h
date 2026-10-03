@@ -6,7 +6,8 @@
 #include <ucontext.h>
 
 #if defined(__linux__) && defined(__aarch64__)
-#include <asm/sigcontext.h>
+/* glibc's <signal.h>/<ucontext.h> already provide the AArch64 context
+ * definitions; including <asm/sigcontext.h> duplicates them on musl/glibc. */
 #endif
 
 #if defined(__aarch64__)

@@ -128,13 +128,19 @@ struct platform_thread_cpu_usage platform_get_thread_cpu_usage(void) {
 }
 
 int platform_fd_get_path(int fd, char *out, size_t out_size) {
-    if (out_size == 0)
+    if (out_size == 0) {
+        errno = EINVAL;
         return -1;
+    }
     char tmp[MAXPATHLEN];
     if (fcntl(fd, F_GETPATH, tmp) < 0)
         return -1;
+    if (strlen(tmp) >= out_size) {
+        errno = ENAMETOOLONG;
+        return -1;
+    }
     strlcpy(out, tmp, out_size);
-    return strlen(tmp) < out_size ? 0 : -1;
+    return 0;
 }
 
 uint64_t platform_stat_atime_sec(const struct stat *st) { return st->st_atimespec.tv_sec; }

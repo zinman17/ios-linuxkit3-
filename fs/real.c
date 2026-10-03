@@ -422,8 +422,28 @@ ssize_t realfs_readlink(struct mount *mount, const char *path, char *buf, size_t
 
 int realfs_getpath(struct fd *fd, char *buf) {
     int err = platform_fd_get_path(fd->real_fd, buf, MAX_PATH);
-    if (err < 0)
-        return err;
+    // Return the *mapped* host errno: a bare -1 is not an error code, and iSH
+    // numbers _EPERM as -1, so passing it through reports a bogus "Operation
+    // not permitted" for any failed host lookup (ENOENT, ENAMETOOLONG, EINTR).
+    if (err < 0) {
+        // Some hosts (notably iSH) answer ENOENT from readlink("/proc/self/fd/N")
+        // even for a perfectly live descriptor, and this is the very first path
+        // lookup of the process, so every guest open() would fail. Identify the
+        // mount root by identity instead of by name: if this descriptor *is* the
+        // mount root then its path inside the mount is the empty string, which
+        // is exactly what a successful host lookup would have reported.
+        int mapped = errno_map();
+        struct stat self_st, root_st;
+        if (fd->mount != NULL && fd->mount->root_fd >= 0 &&
+                fstat(fd->real_fd, &self_st) == 0 &&
+                fstat(fd->mount->root_fd, &root_st) == 0 &&
+                self_st.st_dev == root_st.st_dev &&
+                self_st.st_ino == root_st.st_ino) {
+            buf[0] = '\0';
+            return 0;
+        }
+        return mapped;
+    }
 
     /* For bind-mounted dirs, F_GETPATH resolves symlinks and returns the
      * host persistent path (e.g. /Users/.../MinisChat/minis/<sid>/attachments).

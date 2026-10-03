@@ -86,7 +86,16 @@ struct platform_sysinfo platform_get_sysinfo(void) {
 
 struct platform_thread_cpu_usage platform_get_thread_cpu_usage(void) {
     struct rusage usage = {};
+    // iSH answers EINVAL for RUSAGE_THREAD (per-thread accounting is not
+    // emulated), which used to trip the assert below and abort() the host on
+    // every single guest exit -- the guest produced correct output and the
+    // process then died with SIGABRT (status 139). Fall back to the process
+    // scope, which every Linux host implements.
     int err = getrusage(RUSAGE_THREAD, &usage);
+    if (err != 0) {
+        memset(&usage, 0, sizeof(usage));
+        err = getrusage(RUSAGE_SELF, &usage);
+    }
     assert(err == 0);
     return (struct platform_thread_cpu_usage) {
         .user_sec = usage.ru_utime.tv_sec,
@@ -97,11 +106,21 @@ struct platform_thread_cpu_usage platform_get_thread_cpu_usage(void) {
 }
 
 int platform_fd_get_path(int fd, char *out, size_t out_size) {
-    if (out_size == 0)
+    if (out_size == 0) {
+        errno = EINVAL;
         return -1;
+    }
     char proc_path[64];
     snprintf(proc_path, sizeof(proc_path), "/proc/self/fd/%d", fd);
-    ssize_t n = readlink(proc_path, out, out_size - 1);
+    ssize_t n;
+    // The emulator runs signal-heavy and /proc reads are restartable: a signal
+    // delivered mid-readlink turns into EINTR. Retrying here matters far more
+    // than it looks, because callers surface a bare -1 and iSH's errno
+    // numbering makes -1 == _EPERM, so an interrupted lookup otherwise reaches
+    // the guest as "Operation not permitted" on an ordinary open().
+    do {
+        n = readlink(proc_path, out, out_size - 1);
+    } while (n < 0 && errno == EINTR);
     if (n < 0)
         return -1;
     out[n] = '\0';
