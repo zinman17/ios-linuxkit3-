@@ -245,6 +245,15 @@ static pthread_attr_t task_thread_attr;
 __attribute__((constructor)) static void create_attr() {
     pthread_attr_init(&task_thread_attr);
     pthread_attr_setdetachstate(&task_thread_attr, PTHREAD_CREATE_DETACHED);
+    // Guest code runs on this same host stack (see asbestos fiber_enter), and
+    // so do the kernel-side paths for its syscalls: generic_openat_impl alone
+    // keeps char path[MAX_PATH] on the stack and path_normalize adds two more
+    // MAX_PATH buffers per symlink level. musl's default thread stack is only
+    // 128 KiB, which the exec path can exhaust -- the symptom is a SIGSEGV in
+    // the prologue of generic_openat_impl (stp x29,x30,[sp,#-64]!) reached from
+    // __do_execve, i.e. every guest fork+exec died. Give task threads real
+    // headroom; the mapping is lazy so only touched pages are committed.
+    pthread_attr_setstacksize(&task_thread_attr, 8 * 1024 * 1024);
 }
 
 // Dispose of a fully initialised task for which task_start failed. Unlike
