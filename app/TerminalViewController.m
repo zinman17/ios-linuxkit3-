@@ -82,6 +82,7 @@
                    name:UIKeyboardDidChangeFrameNotification
                  object:nil];
     [self _updateStyleFromPreferences:NO];
+    [self scheduleFrontendWatchdog];
     
     if (UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad) {
         [self.bar removeArrangedSubview:self.hideKeyboardButton];
@@ -237,6 +238,9 @@
 }
 
 #if !ISH_LINUX
+static CFAbsoluteTime lastSessionExitTime = 0;
+static int rapidSessionExitCount = 0;
+
 - (void)processExited:(NSNotification *)notif {
     int pid = [notif.userInfo[@"pid"] intValue];
     if (pid != self.sessionPid)
@@ -247,6 +251,19 @@
     [self.sessionTerminal destroy];
     self.sessionTerminal = nil;
     current = NULL; // it's been freed
+
+    // If the guest exits over and over, tell the user instead of looping silently.
+    CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
+    if (now - lastSessionExitTime < 15)
+        rapidSessionExitCount++;
+    else
+        rapidSessionExitCount = 1;
+    lastSessionExitTime = now;
+    if (rapidSessionExitCount == 4) {
+        [self showMessage:@"the guest program keeps crashing"
+                 subtitle:[NSString stringWithFormat:@"the terminal program exited with code %d repeatedly\n\nscreenshot this and send it back", code]];
+    }
+
     [self startNewSession];
 }
 #endif
@@ -266,6 +283,33 @@
                                                   style:UIAlertActionStyleDefault
                                                 handler:nil]];
         [self presentViewController:alert animated:YES completion:nil];
+    });
+}
+
+- (void)scheduleFrontendWatchdog {
+    // If the web renderer never finishes loading, the terminal stays black forever
+    // with no error anywhere. Surface that on screen so it can be reported easily.
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(20 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if (self.terminal == nil || self.terminal.loaded)
+            return;
+        NSMutableString *logText = [NSMutableString string];
+        for (NSString *line in self.terminal.frontendLog) {
+            if (logText.length)
+                [logText appendString:@"\n"];
+            [logText appendString:line];
+            if (logText.length > 900) {
+                [logText appendString:@"\n\u2026"];
+                break;
+            }
+        }
+        if (logText.length == 0)
+            [logText appendString:@"(renderer sent no diagnostics)"];
+        NSLog(@"frontend watchdog fired; log: %@", logText);
+        [self showMessage:@"renderer failed to start"
+                 subtitle:[NSString stringWithFormat:@"iOS %@ on %@\n%@\n\nscreenshot this and send it back",
+                           [UIDevice currentDevice].systemVersion,
+                           [UIDevice currentDevice].model,
+                           logText]];
     });
 }
 

@@ -28,6 +28,7 @@ typedef struct linux_tty *tty_t;
 }
 
 @property BOOL loaded;
+@property NSMutableArray<NSString *> *frontendLog;
 @property (nonatomic) tty_t tty;
 // lock with dataLock for !linux and @synchronized(self) for linux
 @property (nonatomic) NSMutableData *pendingData;
@@ -80,6 +81,7 @@ static NSMapTable<NSUUID *, Terminal *> *terminalsByUUID;
 
         if (self = [super init]) {
             self.pendingData = [[NSMutableData alloc] initWithCapacity:BUF_SIZE];
+            self.frontendLog = [[NSMutableArray alloc] init];
             self.refreshTask = [[DelayedUITask alloc] initWithTarget:self action:@selector(refresh)];
 #if !ISH_LINUX
             lock_init(&_dataLock);
@@ -135,6 +137,11 @@ static NSMapTable<NSUUID *, Terminal *> *terminalsByUUID;
         // Give WebKit access to the containing bundle directory so the
         // terminal frontend can load adjacent classic scripts and assets.
         [_webView loadFileURL:xtermHtmlFile allowingReadAccessToURL:xtermHtmlFile.URLByDeletingLastPathComponent];
+#if USE_XTERM_RENDERER
+        [self appendFrontendLogLine:@"native: loading xterm-term.html (xterm.js Canvas2D renderer)"];
+#else
+        [self appendFrontendLogLine:@"native: loading term.html (Ghostty WASM/WebGL renderer)"];
+#endif
     }
     return _webView;
 }
@@ -183,6 +190,18 @@ static NSMapTable<NSUUID *, Terminal *> *terminalsByUUID;
     });
 }
 
+- (void)appendFrontendLogLine:(NSString *)line {
+    if (line.length == 0)
+        return;
+    if (line.length > 240)
+        line = [[line substringToIndex:240] stringByAppendingString:@"\u2026"];
+    @synchronized (self) {
+        [_frontendLog addObject:line];
+        if (_frontendLog.count > 12)
+            [_frontendLog removeObjectsInRange:NSMakeRange(0, _frontendLog.count - 12)];
+    }
+}
+
 - (void)userContentController:(WKUserContentController *)userContentController didReceiveScriptMessage:(WKScriptMessage *)message {
     if ([message.name isEqualToString:@"load"]) {
         NSLog(@"terminal frontend loaded");
@@ -192,6 +211,7 @@ static NSMapTable<NSUUID *, Terminal *> *terminalsByUUID;
         self.enableVoiceOverAnnounce = self.enableVoiceOverAnnounce;
     } else if ([message.name isEqualToString:@"log"]) {
         NSLog(@"%@", message.body);
+        [self appendFrontendLogLine:[NSString stringWithFormat:@"%@", message.body]];
     } else if ([message.name isEqualToString:@"sendInput"]) {
         if (![message.body isKindOfClass:NSString.class])
             return;

@@ -6,7 +6,10 @@ GUEST_ARCH = arm64
 
 // Add the GUEST_ARM64 preprocessor macro for both meson and Xcode builds.
 ISH_GUEST_DEFINES = GUEST_ARM64=1
-GCC_PREPROCESSOR_DEFINITIONS = GUEST_ARM64=1 DEBUG=1
+// USE_XTERM_RENDERER: use the vendored xterm.js (Canvas2D) frontend instead of the
+// Ghostty WASM/WebGL frontend. Ghostty's fetch() of ghostty-vt.wasm over file://
+// URLs is unreliable in WKWebView, which leaves the terminal permanently black.
+GCC_PREPROCESSOR_DEFINITIONS = $(inherited) GUEST_ARM64=1 DEBUG=1 USE_XTERM_RENDERER=1
 
 // Meson options for ARM64 guest
 MESON_GUEST_OPTION = -Dguest_arch=arm64

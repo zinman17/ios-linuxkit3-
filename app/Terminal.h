@@ -36,6 +36,8 @@ struct tty;
 @property (nonatomic) BOOL enableVoiceOverAnnounce;
 // Use KVO on this
 @property (readonly) BOOL loaded;
+// Last diagnostic messages sent by the web frontend (via the "log" message handler).
+@property (readonly) NSArray<NSString *> *frontendLog;
 
 @end
 
