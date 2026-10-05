@@ -63,9 +63,16 @@ fi
 
 buildtype=debug
 b_ndebug=false
-if [[ $CONFIGURATION == Release ]]; then
-    buildtype=debugoptimized
-fi
+# Release-equivalent device builds MUST NOT fall back to an unoptimized core.
+# The custom configuration name (Xcode FB19282108 workaround) does not contain
+# the substring "Release", so it used to silently get Meson's debug buildtype
+# (-O0), making the emulator core several times slower than it should be.
+case "$CONFIGURATION" in
+    Release|*Release*|*ApplePleaseFix*)
+        buildtype=release   # -O3, no debug info
+        b_ndebug=true       # compile assert() out of the interpreter hot loop
+        ;;
+esac
 b_sanitize=none
 if [[ -n "$ENABLE_ADDRESS_SANITIZER" ]]; then
     b_sanitize=address
