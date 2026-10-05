@@ -1,0 +1,123 @@
+name: Build LinuxKit IPA
+
+# Builds the iSH-ARM64 app (ios-linuxkit) on a macOS runner and packages
+# an unsigned device .ipa. Install it by signing with AltStore, SideStore,
+# Sideloadly, ESign, or installing directly with TrollStore.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "fix/ish-sandbox-portability"
+    paths:
+      - ".github/workflows/build-ipa.yml"
+      - "iSH.xcodeproj/**"
+      - "app/**"
+      - "kernel/**"
+      - "emu/**"
+      - "fs/**"
+      - "asbestos/**"
+      - "platform/**"
+      - "vdso/**"
+      - "util/**"
+      - "meson.build"
+      - "meson_options.txt"
+      - "deps/meson.build"
+
+permissions:
+  contents: write # needed to create the release
+
+jobs:
+  build-ipa:
+    name: Build unsigned IPA (macOS)
+    runs-on: macos-15
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+          fetch-depth: 0
+
+      - name: Init required submodules only (skip huge linux kernel repo)
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git submodule update --init --depth 1 deps/libapps deps/libarchive
+          git submodule status
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          xcodebuild -showsdks | grep -i iphoneos
+          xcrun --sdk iphoneos --show-sdk-path
+          python3 --version
+          meson --version 2>/dev/null || echo "meson: not installed yet"
+
+      - name: Install build tools
+        run: |
+          brew install meson ninja
+          meson --version
+          ninja --version
+
+      - name: Build iSH-ARM64 app (unsigned, iOS device)
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project iSH.xcodeproj \
+            -scheme iSH-ARM64 \
+            -configuration "Debug-ApplePleaseFixFB19282108" \
+            -destination "generic/platform=iOS" \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            build 2>&1 | tee "${{ github.workspace }}/xcodebuild.log" | grep -E "^[0-9]+%|error|warning: |BUILD" || true
+          if ! grep -q "\*\* BUILD SUCCEEDED \*\*" xcodebuild.log; then
+            echo "::error::xcodebuild did not succeed. Last 250 log lines:"
+            tail -n 250 xcodebuild.log
+            exit 1
+          fi
+
+      - name: Package unsigned IPA
+        run: |
+          set -euxo pipefail
+          APP_PATH=$(find build/Build/Products -maxdepth 2 -type d -name "LinuxKit.app" | head -n 1)
+          if [ -z "$APP_PATH" ]; then
+            APP_PATH=$(find build/Build/Products -maxdepth 2 -type d -name "*.app" | head -n 1)
+          fi
+          test -n "$APP_PATH" || { echo "::error::No .app produced"; exit 1; }
+          echo "App bundle: $APP_PATH"
+          du -sh "$APP_PATH"
+          ls "$APP_PATH"
+          # Include alternate icon PNGs referenced via CFBundleAlternateIcons
+          cp -v app/Icons/*.png "$APP_PATH/" || true
+          rm -rf Payload LinuxKit-unsigned.ipa
+          mkdir Payload
+          cp -R "$APP_PATH" Payload/
+          zip -qry LinuxKit-unsigned.ipa Payload
+          ls -lh LinuxKit-unsigned.ipa
+          unzip -l LinuxKit-unsigned.ipa | head -25
+          echo "--- linked libraries of main binary ---"
+          otool -L "$APP_PATH/LinuxKit" 2>/dev/null | head -25 || true
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LinuxKit-unsigned-ipa-${{ github.run_number }}
+          path: LinuxKit-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Create release with IPA
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "ci-build-${{ github.run_number }}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "LinuxKit IPA — build #${{ github.run_number }}" \
+            --notes "Unsigned iOS IPA of ios-linuxkit (iSH-ARM64) v2.4.1 (818), built automatically by GitHub Actions.
+
+          The app is **unsigned** — install it by signing with AltStore, SideStore, Sideloadly, ESign, or install directly with TrollStore." \
+            LinuxKit-unsigned.ipa
