@@ -2148,7 +2148,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "\"$SRCROOT/app/xcode-meson.sh\"\ncd \"$MESON_BUILD_DIR\"\n\"$SRCROOT/app/xcode-ninja.sh\" $NINJA_TARGETS\nmkdir -p \"$CONFIGURATION_BUILD_DIR\"\nln -sf \"$MESON_BUILD_DIR/libish.a\" \"$CONFIGURATION_BUILD_DIR/libish.a\"\nln -sf \"$MESON_BUILD_DIR/libish_emu.a\" \"$CONFIGURATION_BUILD_DIR/libish_emu.a\"\nln -sf \"$MESON_BUILD_DIR/libfakefs.a\" \"$CONFIGURATION_BUILD_DIR/libfakefs.a\"\n";
+			shellScript = "\"$SRCROOT/app/xcode-meson.sh\"\ncd \"$MESON_BUILD_DIR\"\n\"$SRCROOT/app/xcode-ninja.sh\" $NINJA_TARGETS || exit $?\nmkdir -p \"$CONFIGURATION_BUILD_DIR\"\nln -sf \"$MESON_BUILD_DIR/libish.a\" \"$CONFIGURATION_BUILD_DIR/libish.a\"\nln -sf \"$MESON_BUILD_DIR/libish_emu.a\" \"$CONFIGURATION_BUILD_DIR/libish_emu.a\"\nln -sf \"$MESON_BUILD_DIR/libfakefs.a\" \"$CONFIGURATION_BUILD_DIR/libfakefs.a\"\n";
 		};
 		BB034E8C263643C10000A498 /* Generate APK Repositories File */ = {
 			isa = PBXShellScriptBuildPhase;

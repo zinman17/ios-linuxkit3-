@@ -1,4 +1,5 @@
 SDKROOT = iphoneos
+IPHONEOS_DEPLOYMENT_TARGET = 12.0
 TARGETED_DEVICE_FAMILY = 1,2 // iPhone, iPad
 SUPPORTED_PLATFORMS = iphonesimulator iphoneos
 

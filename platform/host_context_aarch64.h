@@ -3,6 +3,13 @@
 
 #include <signal.h>
 #include <stdint.h>
+
+/* Apple SDKs gate <ucontext.h> behind _XOPEN_SOURCE; define it here (before
+ * the include) so iOS/device builds compile. Guarded so a project-wide
+ * definition always wins. */
+#ifndef _XOPEN_SOURCE
+#define _XOPEN_SOURCE 600
+#endif
 #include <ucontext.h>
 
 #if defined(__linux__) && defined(__aarch64__)
