@@ -43,6 +43,15 @@ static void app_host_fault_handler(int sig, siginfo_t *info, void *ctx) {
 
 __attribute__((constructor))
 static void ish_app_install_host_fault_handlers(void) {
+    // Default the JIT off: stock iOS kills the process (uncatchable SIGKILL
+    // from codesigning enforcement) when a non-platform-signed app executes
+    // self-generated code. The Settings toggle ("Native JIT") re-enables it
+    // for platform-signed installs (TrollStore). jit_init() checks this env
+    // before it maps any executable memory, so off = zero JIT syscalls.
+    if (![[NSUserDefaults standardUserDefaults] boolForKey:@"ish_jit_enabled"]) {
+        setenv("ISH_JIT", "0", 1);
+    }
+
     static char altstack[SIGSTKSZ];
     stack_t ss = {.ss_sp = altstack, .ss_size = SIGSTKSZ};
     sigaltstack(&ss, NULL);
