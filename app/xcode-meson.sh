@@ -22,6 +22,18 @@ fi
 mkdir -p "$MESON_BUILD_DIR"
 cd "$MESON_BUILD_DIR"
 
+# JIT toggle: ISH_ENABLE_JIT=1 (set by CI) enables the experimental native
+# ARM64 backend. On iOS it uses the dual-mapping code region (vm_remap RW +
+# RX views, no MAP_JIT, no special entitlements); fault recovery
+# (platform/native_fault.c) is compiled into libish unconditionally. Change
+# jit and jit_emit together; cli_aot must stay empty for runtime JIT (a
+# stale cli_aot fails Meson's dependency check before a later option update
+# could clear the images).
+jit_args="-Djit=false -Djit_emit=false -Dcli_aot="
+if [[ -n "$ISH_ENABLE_JIT" ]]; then
+    jit_args="-Djit=true -Djit_emit=true -Dcli_aot="
+fi
+
 config=$(meson introspect --buildoptions)
 if [[ $? -ne 0 ]]; then
     export CC_FOR_BUILD="env -u SDKROOT -u IPHONEOS_DEPLOYMENT_TARGET xcrun clang"
@@ -56,8 +68,7 @@ EOF
     if [[ -n "$GUEST_ARCH" ]]; then
         guest_arch_opt="-Dguest_arch=$GUEST_ARCH"
     fi
-    (set -x; meson "$SRCROOT" --cross-file "$crossfile" $guest_arch_opt \
-        -Djit=false -Djit_emit=false -Dcli_aot=) || exit $?
+    (set -x; meson "$SRCROOT" --cross-file "$crossfile" $guest_arch_opt $jit_args) || exit $?
     config=$(meson introspect --buildoptions)
 fi
 
@@ -85,12 +96,8 @@ if [[ -n "$ISH_KERNEL" ]]; then
 fi
 kconfig=""
 guest_arch=${GUEST_ARCH:-arm64}
-# Existing app targets have neither native fault recovery nor AOT image linkage.
-# Never inherit a recorder/native configuration from a reused build directory.
-# An eventual AOT target needs a separate, validated bridge, not an env override.
-# Change all three together: jit=false with stale cli_aot still set would fail
-# Meson's dependency check before a later option update could clear the images.
-(set -x; meson configure -Djit=false -Djit_emit=false -Dcli_aot=) || exit $?
+# Never inherit a recorder/AOT configuration from a reused build directory.
+(set -x; meson configure $jit_args) || exit $?
 for var in buildtype log b_ndebug b_sanitize log_handler kernel kconfig guest_arch; do
     old_value=$(python3 -c "import sys, json; v = next(x['value'] for x in json.load(sys.stdin) if x['name'] == '$var'); print(str(v).lower() if isinstance(v, bool) else ','.join(v) if isinstance(v, list) else v)" <<< $config)
     new_value=${!var}

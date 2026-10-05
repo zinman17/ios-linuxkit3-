@@ -61,6 +61,9 @@ jobs:
           ninja --version
 
       - name: Build iSH-ARM64 app (unsigned, iOS device)
+        env:
+          # Enable the experimental native ARM64 JIT backend in libiSH
+          ISH_ENABLE_JIT: "1"
         run: |
           set -o pipefail
           xcodebuild \
@@ -117,7 +120,9 @@ jobs:
           gh release create "ci-build-${{ github.run_number }}" \
             --repo "$GITHUB_REPOSITORY" \
             --title "LinuxKit IPA — build #${{ github.run_number }}" \
-            --notes "Unsigned iOS IPA of ios-linuxkit (iSH-ARM64) v2.4.1 (818), built automatically by GitHub Actions.
+            --notes "Unsigned iOS IPA of ios-linuxkit (iSH-ARM64) v2.4.1, built automatically by GitHub Actions.
+
+          This build runs the emulator core at **-O3** and enables the **experimental native ARM64 JIT backend**. If the app crashes at boot, fall back to the previous release.
 
           The app is **unsigned** — install it by signing with AltStore, SideStore, Sideloadly, ESign, or install directly with TrollStore." \
             LinuxKit-unsigned.ipa
